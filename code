@@ -1,0 +1,177 @@
+import tkinter as tk
+from tkinter import messagebox
+import requests
+import webbrowser
+import pyttsx3
+import threading
+import speech_recognition as sr
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+
+# Initialize the text-to-speech engine
+engine = pyttsx3.init()
+voices = engine.getProperty('voices')
+engine.setProperty('voice', voices[1].id)
+
+# Sample URLs and their categories for training
+sample_urls = [
+    "https://www.khanacademy.org", "https://www.coursera.org", "https://www.edx.org", 
+    "https://www.facebook.com", "https://www.twitter.com", "https://www.instagram.com",
+    "https://www.youtube.com", "https://www.netflix.com", "https://www.spotify.com",
+    "https://www.amazon.com", "https://www.wikipedia.org", "https://www.quora.com"
+]
+categories = ["educational", "educational", "educational", 
+              "social", "social", "social", 
+              "entertainment", "entertainment", "entertainment",
+              "other", "educational", "educational"]
+
+# Vectorize the URLs
+vectorizer = CountVectorizer()
+X = vectorizer.fit_transform(sample_urls)
+
+# Train the model
+model = MultinomialNB()
+model.fit(X, categories)
+
+# Function to predict URL category
+def predict_category(url):
+    X_test = vectorizer.transform([url])
+    prediction = model.predict(X_test)
+    return prediction[0]
+
+# Function to convert text to speech
+def talk(text):
+    engine.say(text)
+    engine.runAndWait()
+
+# Function to shorten URL using TinyURL API
+def shorten_url():
+    long_url = url_entry.get()
+    if not long_url:
+        messagebox.showwarning("Input Error", "Please enter a valid URL.")
+        return
+
+    api_url = f"http://tinyurl.com/api-create.php?url={long_url}"
+    response = requests.get(api_url)
+    
+    if response.status_code == 200:
+        short_url = response.text
+        category = predict_category(long_url)
+        short_url_entry.config(state=tk.NORMAL)
+        short_url_entry.delete(0, tk.DISABLED)
+        short_url_button.config(state=tk.NORMAL)
+        talk(f"URL shortened successfully! The shortened URL is: {short_url}. This URL is likely related to {category}.")
+    else:
+        messagebox.showerror("Error", "Failed to shorten the URL.")
+        talk("Failed to shorten the URL. Please try again.")
+
+# Function to open the shortened URL in a browser
+def open_short_url():
+    short_url = short_url_entry.get()
+    if short_url:
+        webbrowser.open(short_url)
+
+# Function to suggest educational links
+def suggest_educational_links():
+    educational_links = {
+        "Khan Academy": "https://www.khanacademy.org",
+        "Coursera": "https://www.coursera.org",
+        "edX": "https://www.edx.org",
+        "Udemy": "https://www.udemy.com",
+        "Codecademy": "https://www.codecademy.com"
+    }
+    
+    def open_link(event, url):
+        webbrowser.open(url)
+    
+    links_window = tk.Toplevel(root)
+    links_window.title("Educational Links")
+    links_window.geometry("400x200")
+    
+    text = tk.Text(links_window, wrap=tk.WORD)
+    text.pack(expand=True, fill=tk.BOTH)
+    
+    for name, url in educational_links.items():
+        text.insert(tk.END, name + "\n", url)
+        text.tag_config(url, foreground="blue", underline=1)
+        text.tag_bind(url, "<Button-1>", lambda event, link=url: open_link(event, link))
+    
+    talk("Here are some educational links that might interest you.")
+
+# Function to handle voice commands
+def handle_command():
+    talk("Listening for your command.")
+    command = take_command()
+    if 'shorten' in command:
+        shorten_url()
+    elif 'open' in command:
+        open_short_url()
+    elif 'suggest' in command:
+        suggest_educational_links()
+    elif 'khan academy' in command:
+        webbrowser.open("https://www.khanacademy.org")
+    elif 'coursera' in command:
+        webbrowser.open("https://www.coursera.org")
+    elif 'edx' in command:
+        webbrowser.open("https://www.edx.org")
+    elif 'udemy' in command:
+        webbrowser.open("https://www.udemy.com")
+    elif 'codecademy' in command:
+        webbrowser.open("https://www.codecademy.com")
+    elif 'exit' in command or 'close' in command:
+        talk("Closing the application.")
+        root.quit()
+    else:
+        talk("Please say a valid command.")
+
+# Function to take voice command
+def take_command():
+    try:
+        listener = sr.Recognizer()
+        with sr.Microphone() as source:
+            listener.adjust_for_ambient_noise(source)
+            voice = listener.listen(source)
+            command = listener.recognize_google(voice)
+            command = command.lower()
+            return command
+    except Exception as e:
+        talk("Sorry, I couldn't recognize your command. Please try again.")
+        return ""
+
+# Initialize the GUI
+root = tk.Tk()
+root.title("URL Shortener with Voice Assistant")
+root.geometry("500x350")
+
+frame = tk.Frame(root)
+frame.pack(pady=20)
+
+# Create and place GUI components
+url_label = tk.Label(frame, text="Enter URL:")
+url_label.pack(pady=5)
+
+url_entry = tk.Entry(frame, width=50)
+url_entry.pack(pady=5)
+
+shorten_button = tk.Button(frame, text="Shorten URL", command=shorten_url)
+shorten_button.pack(pady=10)
+
+short_url_label = tk.Label(frame, text="Shortened URL:")
+short_url_label.pack(pady=5)
+
+short_url_entry = tk.Entry(frame, width=50, state=tk.DISABLED)
+short_url_entry.pack(pady=5)
+
+short_url_button = tk.Button(frame, text="Open URL", command=open_short_url, state=tk.DISABLED)
+short_url_button.pack(pady=10)
+
+suggest_links_button = tk.Button(frame, text="Suggest Educational Links", command=suggest_educational_links)
+suggest_links_button.pack(pady=10)
+
+voice_command_button = tk.Button(frame, text="Voice Command", command=lambda: threading.Thread(target=handle_command).start())
+voice_command_button.pack(pady=10)
+
+# Play voice greeting
+talk("Welcome to the URL Shortener Application!")
+
+root.mainloop()
